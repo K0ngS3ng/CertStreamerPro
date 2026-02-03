@@ -7,8 +7,8 @@ import (
 	"github.com/K0ngS3ng/CertStreamerPro/internal/store"
 )
 
-func RunPendingEmitter(ctx context.Context, store *store.Store, out chan<- Event, logf func(string, ...any)) {
-	if store == nil {
+func RunPendingEmitter(ctx context.Context, st *store.Store, out chan<- Event, logf func(string, ...any)) {
+	if st == nil {
 		return
 	}
 	ticker := time.NewTicker(1 * time.Second)
@@ -19,12 +19,12 @@ func RunPendingEmitter(ctx context.Context, store *store.Store, out chan<- Event
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			_ = store.IteratePending(1000, func(key string, ev store.PendingEvent) bool {
+			_ = st.IteratePending(1000, func(key string, ev store.PendingEvent) bool {
 				select {
 				case <-ctx.Done():
 					return false
 				case out <- Event{Domain: ev.Domain, LogURL: ev.LogURL, Observed: ev.Observed, SCTime: ev.SCTime}:
-					_ = store.DeletePending(key)
+					_ = st.DeletePending(key)
 					return true
 				default:
 					if logf != nil {
