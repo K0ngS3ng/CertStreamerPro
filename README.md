@@ -34,6 +34,10 @@ go build -o CertStreamerPro ./cmd/CertStreamerPro
 {"domain":"staging.example.co.in","source_log":"https://ct.googleapis.com/logs/us1/argon2027h1","observed_at":"2026-02-03T17:51:49.642112Z","sct_timestamp":"2026-02-03T16:14:39.566Z","latency_ms":5830076}
 ```
 
+## Backpressure Behavior
+
+To guarantee no loss, the normalization stage will block if the dedup stage is saturated. This keeps correctness intact but can slow ingestion under extreme load. If you need both non-blocking ingestion and zero loss, add a disk-backed overflow queue at the normalization stage.
+
 ## Configuration
 
 See `config.yaml` for defaults. Important options:
