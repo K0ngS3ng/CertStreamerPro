@@ -1,0 +1,35 @@
+log_list_url: "https://www.gstatic.com/ct/log_list/v3/log_list.json"
+data_dir: "./data"
+request_timeout: 10s
+poll_interval: 1s
+batch_size: 256
+parser_workers: 8
+raw_channel_size: 4096
+parsed_channel_size: 4096
+output_channel_size: 4096
+allowlist_file: ""
+include_all_logs: true
+only_subdomains: true
+exclude_log_url_substrings:
+  - "example.com"
+allowed_operators: []
+dedup_workers: 4
+dedup_batch_size: 500
+dedup_flush_interval: 1s
+psl_cache_size: 100000
+
+bloom:
+  bits: 10485760   # 10M bits ~ 1.25MB
+  hashes: 7
+  windows: 6
+  window_seconds: 600s
+
+dedup:
+  badger_value_log_file_size: 268435456
+  gc_interval: 10m
+
+retry:
+  initial: 500ms
+  max: 30s
+  factor: 2.0
+  jitter: 0.2
