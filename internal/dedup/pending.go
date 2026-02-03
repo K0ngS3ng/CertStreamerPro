@@ -7,10 +7,7 @@ import (
 	"github.com/K0ngS3ng/CertStreamerPro/internal/store"
 )
 
-func RunPendingEmitter(ctx context.Context, st *store.Store, out chan<- Event, logf func(string, ...any)) {
-	if st == nil {
-		return
-	}
+func RunPendingEmitter(ctx context.Context, st store.Store, out chan<- Event, logf func(string, ...any)) {
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 

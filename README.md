@@ -9,8 +9,8 @@ CertStreamerPro is a fully self-hosted Certificate Transparency (CT) monitoring 
 - X.509 parsing from CT entries (leaf + extra_data)
 - CN + SAN extraction
 - PSL-aware subdomain filtering (multi-stage TLDs supported)
-- Two-layer dedup: in-memory bloom + persistent BadgerDB
-- Persistent progress tracking per log
+- In-memory dedup (Bloom + map)
+- In-memory progress tracking per log
 - Lossless delivery under backpressure (pending queue)
 - Structured JSON output with SCT timestamp + latency
 - Graceful shutdown
@@ -111,3 +111,13 @@ func main() {
 ## License
 
 No license specified yet.
+
+## Important: In-Memory Mode
+
+This build runs **without any on-disk database**. As a result:
+
+- **Dedup is not persistent** across restarts.
+- **Progress is not persisted**, so restarts will resume from current STH and may skip older entries.
+- **No BadgerDB lock errors**, and no disk growth.
+
+If you need persistence across restarts, reintroduce a durable store.

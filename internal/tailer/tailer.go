@@ -16,7 +16,7 @@ import (
 type Tailer struct {
 	Log        ctlog.Log
 	Client     *http.Client
-	Store      *store.Store
+	Store      store.Store
 	BatchSize  int
 	Poll       time.Duration
 	Retry      util.Backoff

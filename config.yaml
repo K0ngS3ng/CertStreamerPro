@@ -1,5 +1,5 @@
 log_list_url: "https://www.gstatic.com/ct/log_list/v3/log_list.json"
-data_dir: "./data"
+data_dir: "./data" # unused in memory-only mode
 request_timeout: 10s
 poll_interval: 1s
 batch_size: 256

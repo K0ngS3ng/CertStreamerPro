@@ -6,7 +6,6 @@ import (
 	"math/rand"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"syscall"
 	"time"
 
@@ -36,22 +35,9 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	dataDir := cfg.DataDir
-	if err := os.MkdirAll(dataDir, 0o755); err != nil {
-		logger.Printf("data dir error: %v", err)
-		os.Exit(1)
-	}
-	badgerDir := filepath.Join(dataDir, "badger")
-	store, err := store.Open(badgerDir, cfg.Dedup.BadgerValueLogFileSize)
-	if err != nil {
-		logger.Printf("badger open error: %v", err)
-		os.Exit(1)
-	}
-	defer store.Close()
-
-	gcStop := make(chan struct{})
-	go store.RunGC(cfg.Dedup.GCInterval, gcStop)
-	defer close(gcStop)
+	_ = cfg.DataDir
+	memStore := store.OpenMemory()
+	defer memStore.Close()
 
 	allow, err := allowlist.Load(cfg.AllowlistFile)
 	if err != nil {
@@ -60,13 +46,13 @@ func main() {
 	}
 
 	bloom := dedup.NewBloom(cfg.Bloom.Bits, cfg.Bloom.Hashes, cfg.Bloom.Windows, cfg.Bloom.WindowSeconds)
-	deduper := dedup.NewDeduper(store, bloom)
+	deduper := dedup.NewDeduper(memStore, bloom)
 
 	pipe := pipeline.New(cfg.RawChannelSize, cfg.ParsedChannelSize, cfg.OutputChannelSize, allow, cfg.OnlySubdomains)
 	pipe.Logger = logger
 	pipe.Start(ctx, cfg.ParserWorkers, deduper)
 	go deduper.RunSharded(ctx, pipe.DedupCh, pipe.OutputCh, cfg.DedupWorkers, cfg.DedupBatchSize, cfg.DedupFlush, logger.Printf)
-	go dedup.RunPendingEmitter(ctx, store, pipe.OutputCh, logger.Printf)
+	go dedup.RunPendingEmitter(ctx, memStore, pipe.OutputCh, logger.Printf)
 
 	client := ctlog.DefaultHTTPClient(cfg.RequestTimeout)
 	logs, err := ctlog.Discover(ctx, client, cfg.LogListURL, cfg.IncludeAllLogs, cfg.ExcludeLogURLSubs, cfg.AllowedOperators)

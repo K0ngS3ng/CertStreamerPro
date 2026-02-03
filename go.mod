@@ -3,7 +3,6 @@ module github.com/K0ngS3ng/CertStreamerPro
 go 1.22
 
 require (
-	github.com/dgraph-io/badger/v4 v4.3.1
 	golang.org/x/net v0.34.0
 	gopkg.in/yaml.v3 v3.0.1
 )

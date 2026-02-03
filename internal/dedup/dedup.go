@@ -19,11 +19,11 @@ type Event struct {
 }
 
 type Deduper struct {
-	store *store.Store
+	store store.Store
 	bloom *Bloom
 }
 
-func NewDeduper(store *store.Store, bloom *Bloom) *Deduper {
+func NewDeduper(store store.Store, bloom *Bloom) *Deduper {
 	return &Deduper{store: store, bloom: bloom}
 }
 

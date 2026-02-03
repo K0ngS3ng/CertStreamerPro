@@ -5,7 +5,6 @@ import (
 	"errors"
 	"log"
 	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/K0ngS3ng/CertStreamerPro/internal/allowlist"
@@ -134,8 +133,7 @@ func Start(ctx context.Context, cfg Config, opts ...Option) (*Monitor, error) {
 		return nil, errors.New("log list url is required")
 	}
 	if cfg.DataDir == "" {
-		cancel()
-		return nil, errors.New("data dir is required")
+		// DataDir is no longer required in memory-only mode.
 	}
 
 	opt := options{logger: log.New(os.Stderr, "", log.LstdFlags)}
@@ -145,24 +143,11 @@ func Start(ctx context.Context, cfg Config, opts ...Option) (*Monitor, error) {
 	logger := opt.logger
 	util.SetPSLCacheSize(cfg.PSLCacheSize)
 
-	if err := os.MkdirAll(cfg.DataDir, 0o755); err != nil {
-		cancel()
-		return nil, err
-	}
-	badgerDir := filepath.Join(cfg.DataDir, "badger")
-	store, err := store.Open(badgerDir, cfg.Dedup.BadgerValueLogFileSize)
-	if err != nil {
-		cancel()
-		return nil, err
-	}
-
-	gcStop := make(chan struct{})
-	go store.RunGC(cfg.Dedup.GCInterval, gcStop)
+	memStore := store.OpenMemory()
 
 	allow, err := allowlist.Load(cfg.AllowlistFile)
 	if err != nil {
-		close(gcStop)
-		_ = store.Close()
+		_ = memStore.Close()
 		cancel()
 		return nil, err
 	}
@@ -171,19 +156,18 @@ func Start(ctx context.Context, cfg Config, opts ...Option) (*Monitor, error) {
 	}
 
 	bloom := dedup.NewBloom(cfg.Bloom.Bits, cfg.Bloom.Hashes, cfg.Bloom.Windows, cfg.Bloom.WindowSeconds)
-	deduper := dedup.NewDeduper(store, bloom)
+	deduper := dedup.NewDeduper(memStore, bloom)
 
 	pipe := pipeline.New(cfg.RawChannelSize, cfg.ParsedChannelSize, cfg.OutputChannelSize, allow, cfg.OnlySubdomains)
 	pipe.Logger = logger
 	pipe.Start(ctx, cfg.ParserWorkers, deduper)
 	go deduper.RunSharded(ctx, pipe.DedupCh, pipe.OutputCh, cfg.DedupWorkers, cfg.DedupBatchSize, cfg.DedupFlush, logger.Printf)
-	go dedup.RunPendingEmitter(ctx, store, pipe.OutputCh, logger.Printf)
+	go dedup.RunPendingEmitter(ctx, memStore, pipe.OutputCh, logger.Printf)
 
 	client := ctlog.DefaultHTTPClient(cfg.RequestTimeout)
 	logs, err := ctlog.Discover(ctx, client, cfg.LogListURL, cfg.IncludeAllLogs, cfg.ExcludeLogURLSubs, cfg.AllowedOperators)
 	if err != nil {
-		close(gcStop)
-		_ = store.Close()
+		_ = memStore.Close()
 		cancel()
 		return nil, err
 	}
@@ -213,8 +197,7 @@ func Start(ctx context.Context, cfg Config, opts ...Option) (*Monitor, error) {
 	events := make(chan Event, cfg.OutputChannelSize)
 	stop := func() {
 		cancel()
-		close(gcStop)
-		_ = store.Close()
+		_ = memStore.Close()
 	}
 	go fanOut(ctx, pipe.OutputCh, events, logger)
 
