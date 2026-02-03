@@ -43,10 +43,27 @@ To guarantee no loss, the normalization stage will block if the dedup stage is s
 See `config.yaml` for defaults. Important options:
 
 - `include_all_logs`: use all public logs (excluding test/pending/rejected)
-- `allowed_operators`: optional operator allowlist
+- `allowed_operators`: optional operator allowlist (names must match the operator names in the CT log list)
 - `only_subdomains`: enforce PSL subdomain filtering
 - `dedup_workers`, `dedup_batch_size`, `dedup_flush_interval`
 - `psl_cache_size`
+
+### Allowed Operators
+
+This project can handle **any operator** present in the CT log list. Operator names are **not hardcoded** and come directly from:\n
+`https://www.gstatic.com/ct/log_list/v3/log_list.json`
+
+To allow a subset, set `allowed_operators` to the exact operator names from the log list. Example:
+
+```yaml
+allowed_operators:
+  - "Google"
+  - "Cloudflare"
+  - "Let's Encrypt"
+  - "DigiCert"
+  - "Sectigo"
+  - "TrustAsia"
+```
 
 ## SDK Usage (Go)
 
