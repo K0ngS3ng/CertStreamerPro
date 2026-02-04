@@ -10,6 +10,7 @@ import (
 	"github.com/K0ngS3ng/CertStreamerPro/internal/allowlist"
 	"github.com/K0ngS3ng/CertStreamerPro/internal/ctlog"
 	"github.com/K0ngS3ng/CertStreamerPro/internal/dedup"
+	"github.com/K0ngS3ng/CertStreamerPro/internal/overflow"
 	"github.com/K0ngS3ng/CertStreamerPro/internal/pipeline"
 	"github.com/K0ngS3ng/CertStreamerPro/internal/store"
 	"github.com/K0ngS3ng/CertStreamerPro/internal/tailer"
@@ -143,6 +144,11 @@ func Start(ctx context.Context, cfg Config, opts ...Option) (*Monitor, error) {
 	logger := opt.logger
 	util.SetPSLCacheSize(cfg.PSLCacheSize)
 
+	spill, err := overflow.NewSpillQueue(cfg.DataDir)
+	if err != nil {
+		cancel()
+		return nil, err
+	}
 	memStore := store.OpenMemory()
 
 	allow, err := allowlist.Load(cfg.AllowlistFile)
@@ -160,9 +166,29 @@ func Start(ctx context.Context, cfg Config, opts ...Option) (*Monitor, error) {
 
 	pipe := pipeline.New(cfg.RawChannelSize, cfg.ParsedChannelSize, cfg.OutputChannelSize, allow, cfg.OnlySubdomains)
 	pipe.Logger = logger
+	pipe.Spill = spill
 	pipe.Start(ctx, cfg.ParserWorkers, deduper)
 	go deduper.RunSharded(ctx, pipe.DedupCh, pipe.OutputCh, cfg.DedupWorkers, cfg.DedupBatchSize, cfg.DedupFlush, logger.Printf)
 	go dedup.RunPendingEmitter(ctx, memStore, pipe.OutputCh, logger.Printf)
+	go func() {
+		ticker := time.NewTicker(1 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				_ = spill.Drain(func(ev dedup.Event) bool {
+					select {
+					case pipe.DedupCh <- ev:
+						return true
+					default:
+						return false
+					}
+				})
+			}
+		}
+	}()
 
 	client := ctlog.DefaultHTTPClient(cfg.RequestTimeout)
 	logs, err := ctlog.Discover(ctx, client, cfg.LogListURL, cfg.IncludeAllLogs, cfg.ExcludeLogURLSubs, cfg.AllowedOperators)
@@ -189,7 +215,7 @@ func Start(ctx context.Context, cfg Config, opts ...Option) (*Monitor, error) {
 			},
 			RawOut:     pipe.RawCh,
 			Logf:       logger.Printf,
-			DropOnFull: true,
+			DropOnFull: false,
 		}
 		go t.Run(ctx)
 	}

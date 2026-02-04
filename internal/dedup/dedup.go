@@ -47,9 +47,15 @@ func (d *Deduper) RunSharded(ctx context.Context, in <-chan Event, out chan<- Ev
 	for {
 		select {
 		case <-ctx.Done():
+			for i := 0; i < workers; i++ {
+				close(shards[i])
+			}
 			return
 		case ev, ok := <-in:
 			if !ok {
+				for i := 0; i < workers; i++ {
+					close(shards[i])
+				}
 				return
 			}
 			sum := sha256.Sum256([]byte(ev.Domain))

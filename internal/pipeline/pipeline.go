@@ -20,7 +20,12 @@ type Pipeline struct {
 	OutputCh  chan dedup.Event
 	Allowlist *allowlist.Allowlist
 	OnlySubs  bool
+	Spill     SpillWriter
 	Logger    *log.Logger
+}
+
+type SpillWriter interface {
+	Append(ev dedup.Event) error
 }
 
 func New(rawSize, parsedSize, outputSize int, allow *allowlist.Allowlist, onlySubs bool) *Pipeline {
@@ -82,13 +87,12 @@ func (p *Pipeline) normalize(ctx context.Context, logf func(string, ...any)) {
 				continue
 			default:
 				if logf != nil {
-					logf("dedup channel full, backpressuring: %s", norm)
+					logf("dedup channel full, spilling: %s", norm)
 				}
-				select {
-				case <-ctx.Done():
-					return
-				case p.DedupCh <- out:
+				if p.Spill != nil {
+					_ = p.Spill.Append(out)
 				}
+				continue
 			}
 		}
 	}

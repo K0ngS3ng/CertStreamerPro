@@ -2,6 +2,18 @@ package store
 
 import "time"
 
+type DomainEntry struct {
+	Key string
+	TS  time.Time
+}
+
+type PendingEvent struct {
+	Domain   string    `json:"domain"`
+	LogURL   string    `json:"log_url"`
+	Observed time.Time `json:"observed"`
+	SCTime   time.Time `json:"sct_time"`
+}
+
 type Store interface {
 	GetDomain(key string) (bool, error)
 	PutDomain(key string, ts time.Time) error

@@ -86,7 +86,7 @@ func main() {
 	defer cancel()
 
 	cfg := ctmonitor.DefaultConfig()
-	cfg.DataDir = "./data"
+cfg.DataDir = "./data" // spill queue directory
 	cfg.OnlySubdomains = true
 	cfg.AllowedOperators = []string{"Google", "Cloudflare", "Let's Encrypt", "DigiCert"}
 
@@ -102,6 +102,22 @@ func main() {
 }
 ```
 
+## Integration Notes
+
+When integrating into another service, keep these in mind:
+
+1. **Spill queue directory is required.**  
+   `DataDir` is used only for the spill queue. It can be a small local disk path.
+
+2. **Memory‑only dedup.**  
+   Dedup and progress reset on restart. Your app may re‑emit domains after a restart and will resume from current STH (gaps during downtime are possible).
+
+3. **Backpressure behavior.**  
+   Ingestion is lossless. If dedup is saturated, events will be written to the spill log and replayed when capacity returns.
+
+4. **Shutdown.**  
+   Always cancel the context and call `mon.Close()` so goroutines exit cleanly.
+
 ## Notes on Timestamps
 
 - `sct_timestamp` is the CT log inclusion time from `leaf_input`.
@@ -112,12 +128,12 @@ func main() {
 
 No license specified yet.
 
-## Important: In-Memory Mode
+## Important: In-Memory Mode + Spill Queue
 
-This build runs **without any on-disk database**. As a result:
+This build runs **without any on-disk database**. It uses memory for dedup and progress, plus a small disk-backed **spill queue** for overflow when channels are saturated. As a result:
 
 - **Dedup is not persistent** across restarts.
 - **Progress is not persisted**, so restarts will resume from current STH and may skip older entries.
-- **No BadgerDB lock errors**, and no disk growth.
+- **No BadgerDB lock errors**, and minimal disk usage (spill queue only).
 
 If you need persistence across restarts, reintroduce a durable store.

@@ -13,6 +13,7 @@ import (
 	"github.com/K0ngS3ng/CertStreamerPro/internal/config"
 	"github.com/K0ngS3ng/CertStreamerPro/internal/ctlog"
 	"github.com/K0ngS3ng/CertStreamerPro/internal/dedup"
+	"github.com/K0ngS3ng/CertStreamerPro/internal/overflow"
 	"github.com/K0ngS3ng/CertStreamerPro/internal/pipeline"
 	"github.com/K0ngS3ng/CertStreamerPro/internal/store"
 	"github.com/K0ngS3ng/CertStreamerPro/internal/tailer"
@@ -35,7 +36,11 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	_ = cfg.DataDir
+	spill, err := overflow.NewSpillQueue(cfg.DataDir)
+	if err != nil {
+		logger.Printf("spill queue error: %v", err)
+		os.Exit(1)
+	}
 	memStore := store.OpenMemory()
 	defer memStore.Close()
 
@@ -50,9 +55,29 @@ func main() {
 
 	pipe := pipeline.New(cfg.RawChannelSize, cfg.ParsedChannelSize, cfg.OutputChannelSize, allow, cfg.OnlySubdomains)
 	pipe.Logger = logger
+	pipe.Spill = spill
 	pipe.Start(ctx, cfg.ParserWorkers, deduper)
 	go deduper.RunSharded(ctx, pipe.DedupCh, pipe.OutputCh, cfg.DedupWorkers, cfg.DedupBatchSize, cfg.DedupFlush, logger.Printf)
 	go dedup.RunPendingEmitter(ctx, memStore, pipe.OutputCh, logger.Printf)
+	go func() {
+		ticker := time.NewTicker(1 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				_ = spill.Drain(func(ev dedup.Event) bool {
+					select {
+					case pipe.DedupCh <- ev:
+						return true
+					default:
+						return false
+					}
+				})
+			}
+		}
+	}()
 
 	client := ctlog.DefaultHTTPClient(cfg.RequestTimeout)
 	logs, err := ctlog.Discover(ctx, client, cfg.LogListURL, cfg.IncludeAllLogs, cfg.ExcludeLogURLSubs, cfg.AllowedOperators)
@@ -67,7 +92,7 @@ func main() {
 		t := &tailer.Tailer{
 			Log:       lg,
 			Client:    client,
-			Store:     store,
+			Store:     memStore,
 			BatchSize: cfg.BatchSize,
 			Poll:      cfg.PollInterval,
 			Retry: util.Backoff{
@@ -78,7 +103,7 @@ func main() {
 			},
 			RawOut:     pipe.RawCh,
 			Logf:       logger.Printf,
-			DropOnFull: true,
+			DropOnFull: false,
 		}
 		go t.Run(ctx)
 	}
